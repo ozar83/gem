@@ -6,6 +6,9 @@ import yfinance as yf
 from datetime import datetime
 from config import DATA_RAW_PATH
 
+# Jawna definicja struktury CSV
+CSV_COLUMNS = ["Date", "Price", "Open", "Close", "Adj Close", "Low", "High", "Volume"]
+
 
 def fetch_yahoo_data(
         ticker: str,
@@ -19,6 +22,7 @@ def fetch_yahoo_data(
     - Aktualizowany jest tylko bieżący rok.
     - Zwraca dane od start_date do teraz.
     - Opcjonalnie wykonuje resampling lokalnie.
+    - Strukturę pliku CSV definiuje CSV_COLUMNS.
     """
 
     start_dt = pd.to_datetime(start_date)
@@ -58,10 +62,13 @@ def fetch_yahoo_data(
                     )
 
                     if not df_new.empty:
+                        # Mapowanie danych z Yahoo na strukturę CSV
+                        df_new = _map_yahoo_to_csv_structure(df_new)
+
                         df_existing = pd.concat([df_existing, df_new])
                         df_existing = df_existing[~df_existing.index.duplicated(keep="last")]
                         df_existing.sort_index(inplace=True)
-                        df_existing.to_csv(file_path)
+                        df_existing.to_csv(file_path, columns=CSV_COLUMNS[1:])
 
             all_data.append(df_existing)
 
@@ -80,7 +87,9 @@ def fetch_yahoo_data(
             )
 
             if not df_year.empty:
-                df_year.to_csv(file_path)
+                # Mapowanie danych z Yahoo na strukturę CSV
+                df_year = _map_yahoo_to_csv_structure(df_year)
+                df_year.to_csv(file_path, columns=CSV_COLUMNS[1:])
 
             all_data.append(df_year)
 
@@ -109,9 +118,38 @@ def fetch_yahoo_data(
                 "Low": "min",
                 "Close": "last",
                 "Adj Close": "last",
-                "Volume": "sum"
+                "Volume": "sum",
+                "Price": "last"
             })
             .dropna()
         )
 
     return df_final
+
+
+def _map_yahoo_to_csv_structure(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Mapuje dane z Yahoo Finance na strukturę zdefiniowaną przez CSV_COLUMNS.
+
+    Yahoo zwraca: Open, High, Low, Close, Adj Close, Volume
+    Struktura CSV: Date, Price, Open, Close, Adj Close, Low, High, Volume
+
+    Price = Close (cena zamknięcia)
+    """
+
+    # Upewnij się, że Date jest indeksem
+    if "Date" in df.columns:
+        df = df.set_index("Date")
+
+    # Stwórz DataFrame z wymaganymi kolumnami w odpowiedniej kolejności
+    df_mapped = pd.DataFrame({
+        "Price": df["Close"],  # Price to cena zamknięcia
+        "Open": df["Open"],
+        "Close": df["Close"],
+        "Adj Close": df["Adj Close"],
+        "Low": df["Low"],
+        "High": df["High"],
+        "Volume": df["Volume"]
+    })
+
+    return df_mapped
