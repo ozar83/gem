@@ -68,7 +68,7 @@ def fetch_yahoo_data(
                         df_existing = pd.concat([df_existing, df_new])
                         df_existing = df_existing[~df_existing.index.duplicated(keep="last")]
                         df_existing.sort_index(inplace=True)
-                        df_existing.to_csv(file_path, columns=CSV_COLUMNS[1:])
+                        df_existing.to_csv(file_path, columns=CSV_COLUMNS[1:], index=True)
 
             all_data.append(df_existing)
 
@@ -89,7 +89,7 @@ def fetch_yahoo_data(
             if not df_year.empty:
                 # Mapowanie danych z Yahoo na strukturę CSV
                 df_year = _map_yahoo_to_csv_structure(df_year)
-                df_year.to_csv(file_path, columns=CSV_COLUMNS[1:])
+                df_year.to_csv(file_path, columns=CSV_COLUMNS[1:], index=True)
 
             all_data.append(df_year)
 
@@ -141,15 +141,30 @@ def _map_yahoo_to_csv_structure(df: pd.DataFrame) -> pd.DataFrame:
     if "Date" in df.columns:
         df = df.set_index("Date")
 
+    # Obsługa MultiIndex columns (gdy yfinance zwraca hierarchiczne kolumny)
+    if isinstance(df.columns, pd.MultiIndex):
+        # Weź pierwszy poziom MultiIndex (nazwy kolumn OHLCV)
+        df.columns = df.columns.get_level_values(0)
+
+    # Obsługa brakujących kolumn
+    # Jeśli 'Adj Close' nie istnieje, użyj 'Close'
+    if "Adj Close" not in df.columns:
+        df["Adj Close"] = df["Close"]
+
+    # Jeśli 'Price' nie istnieje (to wynik naszego mapowania), użyj 'Close'
+    if "Price" not in df.columns:
+        df["Price"] = df["Close"]
+
     # Stwórz DataFrame z wymaganymi kolumnami w odpowiedniej kolejności
-    df_mapped = pd.DataFrame({
-        "Price": df["Close"],  # Price to cena zamknięcia
-        "Open": df["Open"],
-        "Close": df["Close"],
-        "Adj Close": df["Adj Close"],
-        "Low": df["Low"],
-        "High": df["High"],
-        "Volume": df["Volume"]
-    })
+    # Wybierz tylko potrzebne kolumny
+    df_mapped = df[[
+        "Price",
+        "Open",
+        "Close",
+        "Adj Close",
+        "Low",
+        "High",
+        "Volume"
+    ]].copy()
 
     return df_mapped
