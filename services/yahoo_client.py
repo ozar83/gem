@@ -1,101 +1,117 @@
 # yahoo_client.py
-# Moduł odpowiedzialny za pobieranie danych historycznych z Yahoo Finance
-# Obsługuje cache CSV w folderze data/raw
 
 import os
 import pandas as pd
 import yfinance as yf
-from config import DATA_RAW_PATH, START_DATE, END_DATE, INTERVAL
+from datetime import datetime
+from config import DATA_RAW_PATH
 
-def fetch_yahoo_data(ticker: str, start_date: str = None, end_date: str = None, interval: str = None) -> pd.DataFrame:
+
+def fetch_yahoo_data(
+        ticker: str,
+        start_date: str,
+        resample_interval: str = None  # np. "M", "W", None
+) -> pd.DataFrame:
     """
-    Pobiera dane historyczne z Yahoo Finance dla danego instrumentu i zapisuje je w formie CSV cache.
+    Pobiera i cache'uje dane dzienne (1d) z Yahoo Finance w podziale rocznym.
 
-    :param ticker: symbol giełdowy (np. "SPY", "VEU", "BND")
-    :param start_date: data początkowa w formacie YYYY-MM-DD. Jeśli None, używa START_DATE z config.py
-    :param start_date: data końcowa w formacie YYYY-MM-DD. Jeśli None, używa END_DATE z config.py
-    :param interval: częstotliwość danych ("1d", "1wk", "1mo")
-    :return: pandas.DataFrame z kolumnami:
-             - Date: data
-             - Close: cena zamknięcia
+    - Dane w plikach zawsze w interwale 1d.
+    - Aktualizowany jest tylko bieżący rok.
+    - Zwraca dane od start_date do teraz.
+    - Opcjonalnie wykonuje resampling lokalnie.
     """
 
-    # Jeśli start_date nie został podany, używamy wartości z config.py
-    if start_date is None:
-        start_date = START_DATE
+    start_dt = pd.to_datetime(start_date)
+    current_year = datetime.now().year
+    start_year = start_dt.year
 
-    if end_date is None:
-        end_date = END_DATE
-
-    if interval is None:
-        interval = INTERVAL
-
-    # Tworzymy folder do cache jeśli nie istnieje
     os.makedirs(DATA_RAW_PATH, exist_ok=True)
 
-    # Plik CSV, w którym będziemy trzymać cache
-    csv_file = os.path.join(DATA_RAW_PATH, f"{ticker}_{start_date}_{end_date}_{interval}.csv")
+    all_data = []
 
-    # =====================
-    # KROK 1: SPRAWDZENIE CACHE
-    # =====================
-    if os.path.exists(csv_file):
-        # Jeśli plik istnieje, wczytujemy dane z CSV zamiast pobierać z internetu
-        df = pd.read_csv(csv_file, parse_dates=["Date"])
-        print(f"[Yahoo] Załadowano dane z cache dla {ticker} ({interval})")
-        return df
+    for year in range(start_year, current_year + 1):
 
-    # =====================
-    # KROK 2: POBRANIE DANYCH Z YAHOO FINANCE
-    # =====================
-    print(f"[Yahoo] Pobieranie danych dla {ticker} od {start_date} do {end_date}")
-    data = yf.download(ticker, start=start_date, end=end_date, progress=False, interval=interval, auto_adjust=False)
+        file_path = os.path.join(DATA_RAW_PATH, f"{ticker}_{year}.csv")
 
-    # Sprawdzenie, czy Yahoo zwróciło dane
-    if data.empty:
-        raise ValueError(f"[Yahoo] Nie udało się pobrać danych dla {ticker}. Sprawdź ticker i połączenie internetowe.")
+        year_start = datetime(year, 1, 1)
+        year_end = datetime.now() if year == current_year else datetime(year, 12, 31)
 
-    # ===============================
-    # NORMALIZACJA STRUKTURY DANYCH
-    # ===============================
+        # --------------------------------------------------
+        # PLIK ISTNIEJE
+        # --------------------------------------------------
+        if os.path.exists(file_path):
 
-    # ===============================
-    # NORMALIZACJA STRUKTURY DANYCH
-    # ===============================
+            df_existing = pd.read_csv(file_path, parse_dates=["Date"], index_col="Date")
 
-    # Jeśli kolumny są MultiIndex → spłaszcz
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
+            # Aktualizacja bieżącego roku
+            if year == current_year:
+                last_date = df_existing.index.max()
 
-    # Jeśli Date jest indeksem → przenieś do kolumny
-    if data.index.name == "Date" or "Date" not in data.columns:
-        data = data.reset_index()
+                if last_date < pd.to_datetime(datetime.now().date()):
+                    print(f"Updating {ticker} {year}")
 
-    # Upewnij się że kolumna nazywa się dokładnie "Date"
-    if "index" in data.columns:
-        data.rename(columns={"index": "Date"}, inplace=True)
+                    df_new = yf.download(
+                        ticker,
+                        start=last_date + pd.Timedelta(days=1),
+                        interval="1d",
+                        progress=False
+                    )
 
-    # Sortowanie po dacie
-    data = data.sort_values("Date").reset_index(drop=True)
+                    if not df_new.empty:
+                        df_existing = pd.concat([df_existing, df_new])
+                        df_existing = df_existing[~df_existing.index.duplicated(keep="last")]
+                        df_existing.sort_index(inplace=True)
+                        df_existing.to_csv(file_path)
 
-    # =====================
-    # KROK 3: PRZYGOTOWANIE DATAFRAME
-    # =====================
+            all_data.append(df_existing)
 
-    # Zachowujemy Date i Close
-    df = data[["Date", "Close"]].copy()
+        # --------------------------------------------------
+        # PLIK NIE ISTNIEJE
+        # --------------------------------------------------
+        else:
+            print(f"Downloading {ticker} {year}")
 
-    # Reset indeksu bezpieczeństwa
-    df = df.reset_index(drop=True)
+            df_year = yf.download(
+                ticker,
+                start=year_start,
+                end=year_end,
+                interval="1d",
+                progress=False
+            )
 
-    # Walidacja
-    if "Date" not in df.columns:
-        raise ValueError(f"[Yahoo] Brak kolumny Date. Kolumny: {df.columns}")
+            if not df_year.empty:
+                df_year.to_csv(file_path)
 
-    # =====================
-    # KROK 4: ZAPIS DO CSV CACHE
-    # =====================
-    df.to_csv(csv_file, index=False)
-    print(f"[Yahoo] Zapisano dane do {csv_file}")
+            all_data.append(df_year)
 
-    return df
+    # --------------------------------------------------
+    # SCALANIE
+    # --------------------------------------------------
+    if not all_data:
+        return pd.DataFrame()
+
+    df_final = pd.concat(all_data)
+    df_final = df_final[~df_final.index.duplicated(keep="last")]
+    df_final.sort_index(inplace=True)
+
+    df_final = df_final[df_final.index >= start_dt]
+
+    # --------------------------------------------------
+    # RESAMPLING (opcjonalny)
+    # --------------------------------------------------
+    if resample_interval:
+        df_final = (
+            df_final
+            .resample(resample_interval)
+            .agg({
+                "Open": "first",
+                "High": "max",
+                "Low": "min",
+                "Close": "last",
+                "Adj Close": "last",
+                "Volume": "sum"
+            })
+            .dropna()
+        )
+
+    return df_final

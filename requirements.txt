@@ -6,3 +6,4 @@ streamlit>=1.30
 plotly>=6.0
 
 #pip install plotly
+#pip install pytest

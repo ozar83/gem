@@ -2,6 +2,7 @@
 # Konfiguracja globalna GEM-APP
 
 from datetime import date
+from pathlib import Path
 
 # Tickery domyślne GEM
 TICKERS = {
@@ -17,17 +18,20 @@ MOMENTUM_PERIODS = [3, 6, 12]
 DATA_SOURCES = ["yahoo", "stooq"]
 
 # Cache danych (CSV)
-DATA_RAW_PATH = "C:/Projects/GEM-APP/data/raw"
-DATA_PROCESSED_PATH = "C:/Projects/GEM-APP/data/processed"
+# katalog główny projektu (folder, w którym jest config.py)
+BASE_DIR = Path(__file__).resolve().parent
+
+# jeśli config.py jest w root projektu → to wystarczy
+# jeśli jest np. w src/, dajemy .parent.parent
+
+DATA_RAW_PATH = BASE_DIR / "data" / "raw"
+DATA_PROCESSED_PATH = BASE_DIR / "data" / "processed"
 
 # Rebalancing (ostatni dzień miesiąca)
 REBALANCE_DAY = "last"  # 'last' lub 'first'
 
 # Start danych historycznych
 START_DATE = "2025-01-01"
-
-# end_date = dzisiaj
-END_DATE = date.today().strftime("%Y-%m-%d")
 
 # Format daty
 DATE_FORMAT = "%Y-%m-%d"
