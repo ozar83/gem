@@ -1,0 +1,8 @@
+pandas>=2.0
+numpy>=1.28
+yfinance>=0.2
+requests>=2.31
+streamlit>=1.30
+plotly>=6.0
+
+#pip install plotly
