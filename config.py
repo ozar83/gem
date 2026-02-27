@@ -12,7 +12,11 @@ TICKERS = {
 }
 
 # Horyzonty momentum w miesiącach
-MOMENTUM_PERIODS = [3, 6, 12]
+MOMENTUM_PERIODS = {
+    "3m": 3,
+    "6m": 6,
+    "12m": 12
+}
 
 # Źródła danych
 DATA_SOURCES = ["yahoo", "stooq"]
