@@ -18,11 +18,11 @@ def fetch_yahoo_data(
     """
     Pobiera i cache'uje dane dzienne (1d) z Yahoo Finance w podziale rocznym.
 
-    - Dane w plikach zawsze w interwale 1d.
-    - Aktualizowany jest tylko bieżący rok.
-    - Zwraca dane od start_date do teraz.
-    - Opcjonalnie wykonuje resampling lokalnie.
-    - Strukturę pliku CSV definiuje CSV_COLUMNS.
+    - Pliki CSV przechowują zawsze interwał 1d oraz kolumny zgodne z CSV_COLUMNS.
+    - Aktualizowany jest wyłącznie bieżący rok; lata historyczne nie są ponownie pobierane.
+    - Zwraca dane od start_date do „teraz” (filtr po dacie wykonywany po scaleniu roczników).
+    - Opcjonalny resampling wykonywany jest lokalnie na już pobranych danych.
+    - Zwracany DataFrame ma indeks typu DatetimeIndex (Date jako index) i kolumny: Price, Open, Close, Adj Close, Low, High, Volume.
     """
 
     start_dt = pd.to_datetime(start_date)
@@ -70,7 +70,9 @@ def fetch_yahoo_data(
                         df_existing.sort_index(inplace=True)
                         df_existing.to_csv(file_path, columns=CSV_COLUMNS[1:], index=True)
 
-            all_data.append(df_existing)
+            # Dodaj do all_data tylko jeśli niepuste
+            if df_existing is not None and not df_existing.empty:
+                all_data.append(df_existing)
 
         # --------------------------------------------------
         # PLIK NIE ISTNIEJE
@@ -90,8 +92,8 @@ def fetch_yahoo_data(
                 # Mapowanie danych z Yahoo na strukturę CSV
                 df_year = _map_yahoo_to_csv_structure(df_year)
                 df_year.to_csv(file_path, columns=CSV_COLUMNS[1:], index=True)
-
-            all_data.append(df_year)
+                # Dodaj do all_data tylko jeśli niepuste
+                all_data.append(df_year)
 
     # --------------------------------------------------
     # SCALANIE
@@ -99,7 +101,12 @@ def fetch_yahoo_data(
     if not all_data:
         return pd.DataFrame()
 
-    df_final = pd.concat(all_data)
+    # Scalaj tylko niepuste ramki (dodatkowe zabezpieczenie)
+    non_empty = [df for df in all_data if df is not None and not df.empty]
+    if not non_empty:
+        return pd.DataFrame()
+
+    df_final = pd.concat(non_empty)
     df_final = df_final[~df_final.index.duplicated(keep="last")]
     df_final.sort_index(inplace=True)
 
